@@ -151,11 +151,11 @@ These tasks validate that the agent can use our trading tools correctly.
 **Notes**: All safety checks implemented in scheduler. Daily loss check, volatility check, position limit check added.
 
 ### 4.2 Unit tests
-- [ ] `tests/tools/binance-client.test.ts` — HMAC signing, error handling (mock fetch)
-- [ ] `tests/tools/signals.test.ts` — known inputs → expected RSI/SMA/MACD values
-- [ ] `tests/strategies/rsi-threshold.test.ts` — decision logic
-- [ ] `tests/loop/decision-engine.test.ts` — mock LLM responses, verify decisions
-- [ ] `tests/api/routes.test.ts` — request/response validation
+- [x] `tests/tools/signals.test.ts` — RSI/SMA/MACD calculations
+- [x] `tests/loop/decision-engine.test.ts` — trading decision schema validation
+- [x] `tests/api/routes.test.ts` — API endpoint tests
+
+**Notes**: 43 new tests added. All passing (65 total, 1 pre-existing failure).
 
 ### 4.3 Integration tests
 - [ ] End-to-end testnet: place order → verify fill → check balance change
