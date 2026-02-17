@@ -1,0 +1,2 @@
+{"type":"init","content":"What is the RSI for BTCUSDT?","timestamp":"2026-02-17T23:02:03.674Z"}
+{"type":"tool_result","timestamp":"2026-02-17T23:02:19.330Z","toolName":"calculate_rsi","args":{"symbol":"BTCUSDT","period":14,"interval":"1h"},"result":{"symbol":"BTCUSDT","interval":"1h","period":14,"rsi":42.62,"signal":"neutral","interpretation":"RSI 42.6 — neutral range. No strong signal."}}
