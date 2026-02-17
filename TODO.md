@@ -134,6 +134,7 @@ These tasks validate that the agent can use our trading tools correctly.
 - [x] POST `/emergency-stop` — halt trading loop
 - [x] POST `/config` — update runtime config (pairs, interval)
 - [x] CORS headers for `trading.godot.no`
+- [ ] Add API tests: test endpoints with mocked data
 
 **Notes**: API server starts with autonomous mode on port 3847. Tested /health and /status endpoints.
 
