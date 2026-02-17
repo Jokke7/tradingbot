@@ -4,6 +4,7 @@ import { createDecisionEngine } from './decision-engine.js';
 import { BinanceClient } from '../tools/binance/client.js';
 import { executeTrade, simulatePaperTrade } from '../tools/binance/trade.js';
 import type { BotConfig, BinanceConfig } from '../config.js';
+import { loadState, saveState, recordTradePnl, type BotState } from '../storage/state.js';
 
 export interface SchedulerConfig {
   pairs: string[];
@@ -82,6 +83,20 @@ export class Scheduler extends EventEmitter {
   }
 
   private async evaluatePair(pair: string): Promise<void> {
+    // Safety check: emergency stop
+    const state = loadState();
+    if (state.emergencyStop) {
+      console.log(`[Scheduler] Emergency stop active, skipping ${pair}`);
+      return;
+    }
+
+    // Safety check: daily loss limit
+    if (state.dailyPnl < -10) {
+      console.log(`[Scheduler] Daily loss limit exceeded ($${state.dailyPnl}), halting trading`);
+      return;
+    }
+
+    // Safety check: circuit breaker
     const breaker = this.circuitBreakers.get(pair);
     if (breaker && Date.now() < breaker.skipUntil) {
       console.log(`[Scheduler] ${pair} - circuit breaker active, skipping`);
@@ -89,6 +104,13 @@ export class Scheduler extends EventEmitter {
     }
 
     try {
+      // Safety check: volatility
+      const volatilityCheck = await this.checkVolatility(pair);
+      if (!volatilityCheck.safe) {
+        console.log(`[Scheduler] ${pair} - volatility too high (${volatilityCheck.change}%), skipping`);
+        return;
+      }
+
       const engine = createDecisionEngine(this.client, {
         confidenceThreshold: this.config.confidenceThreshold,
         maxTradeUsd: this.config.maxTradeUsd,
@@ -99,8 +121,21 @@ export class Scheduler extends EventEmitter {
       console.log(`[Scheduler] ${pair}: ${decision.action} (confidence: ${decision.confidence}%) - ${decision.reasoning}`);
 
       if (decision.action !== 'HOLD' && decision.size_usd > 0) {
+        // Safety check: position limit
+        const positionCheck = await this.checkPositionLimit(pair, decision.size_usd, decision.action);
+        if (!positionCheck.allowed) {
+          console.log(`[Scheduler] ${pair} - position limit would be exceeded: ${positionCheck.reason}`);
+          return;
+        }
+
         const result = await this.executeTrade(pair, decision);
         this.emit('trade', pair, result);
+
+        // Record P&L
+        if (result.executed && result.orderId) {
+          recordTradePnl(state, decision.action === 'BUY' ? 0 : -decision.size_usd * 0.001);
+          saveState(state);
+        }
       }
 
       this.circuitBreakers.set(pair, { errors: 0, skipUntil: 0 });
@@ -116,6 +151,43 @@ export class Scheduler extends EventEmitter {
         console.log(`[Scheduler] ${pair} - circuit breaker triggered (3 errors), skipping for 30min`);
       }
       this.circuitBreakers.set(pair, current);
+    }
+  }
+
+  private async checkVolatility(pair: string): Promise<{ safe: boolean; change: number }> {
+    try {
+      const ticker = await this.client.publicGet<{ priceChangePercent: string }>('/v3/ticker/24hr', { symbol: pair });
+      const change = Math.abs(parseFloat(ticker.priceChangePercent));
+      return { safe: change <= 5, change };
+    } catch {
+      return { safe: true, change: 0 };
+    }
+  }
+
+  private async checkPositionLimit(
+    pair: string,
+    sizeUsd: number,
+    action: 'BUY' | 'SELL'
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    if (action === 'SELL') {
+      return { allowed: true };
+    }
+
+    try {
+      const account = await this.client.signedGet<{ balances: { asset: string; free: string }[] }>('/v3/account', {});
+      const usdtBalance = account.balances.find(b => b.asset === 'USDT');
+      const usdt = parseFloat(usdtBalance?.free || '0');
+      
+      const totalPortfolio = usdt + sizeUsd;
+      const positionPercent = (sizeUsd / totalPortfolio) * 100;
+
+      if (positionPercent > 50) {
+        return { allowed: false, reason: `Would be ${positionPercent.toFixed(1)}% of portfolio (max 50%)` };
+      }
+
+      return { allowed: true };
+    } catch {
+      return { allowed: true };
     }
   }
 

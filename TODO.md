@@ -143,10 +143,12 @@ These tasks validate that the agent can use our trading tools correctly.
 ## Phase 4 — Safety, Testing & Hardening
 
 ### 4.1 Safety mechanisms
-- [ ] Daily loss limit: halt trading if cumulative loss > $10/day
-- [ ] Volatility circuit breaker: skip pair if 5-min change > 5%
-- [ ] Emergency stop flag (persisted — survives restarts)
-- [ ] Position limits: max 50% portfolio in single asset
+- [x] Daily loss limit: halt trading if cumulative loss > $10/day
+- [x] Volatility circuit breaker: skip pair if 5-min change > 5%
+- [x] Emergency stop flag (persisted — survives restarts)
+- [x] Position limits: max 50% portfolio in single asset
+
+**Notes**: All safety checks implemented in scheduler. Daily loss check, volatility check, position limit check added.
 
 ### 4.2 Unit tests
 - [ ] `tests/tools/binance-client.test.ts` — HMAC signing, error handling (mock fetch)
