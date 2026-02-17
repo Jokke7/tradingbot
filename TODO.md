@@ -1,0 +1,208 @@
+# Trading Bot — Developer TODO
+
+> Actionable task list for continuing development.
+> Check items off as you complete them. See PLAN.md for full architecture context.
+>
+> **Current state**: Phase 0 complete. Bot boots, connects to Binance testnet,
+> and has 12 trading tools registered. No trades have been executed yet.
+
+---
+
+## How to Run
+
+```bash
+# Prerequisites: bun installed (~/.bun/bin/bun)
+source ~/.bash_profile   # ensure bun is in PATH
+
+# Connectivity check (no LLM calls)
+bun run src/bot/index.ts --check
+
+# Interactive mode (REPL — queries go to LLM)
+bun run src/bot/index.ts
+
+# Autonomous mode (not yet implemented)
+bun run src/bot/index.ts --autonomous
+```
+
+---
+
+## Phase 1 — Interactive Trading Tools (NEXT)
+
+The tools exist but haven't been tested end-to-end with the LLM yet.
+These tasks validate that the agent can use our trading tools correctly.
+
+### 1.1 Smoke-test market data tools
+- [ ] Run interactive mode and ask: "What is the current price of BTC on Binance?"
+- [ ] Verify the agent calls `get_binance_price` (not Dexter's `financial_search`)
+- [ ] Ask: "Show me the last 24 hours of ETH candles" — should use `get_binance_klines`
+- [ ] Fix any tool invocation issues (schema mismatches, response format)
+
+### 1.2 Smoke-test account tools
+- [ ] Ask: "What's my Binance balance?" — should call `get_binance_balance`
+- [ ] Ask: "Show my recent BTC trades" — should call `get_binance_trade_history`
+- [ ] Verify testnet returns the default fake balances (~1 BTC, ~10000 USDT)
+
+### 1.3 Smoke-test signal tools
+- [ ] Ask: "What's the RSI for BTCUSDT?" — should call `calculate_rsi`
+- [ ] Ask: "Give me a full technical analysis of ETHUSDT" — should call
+      multiple signal tools (RSI + moving averages + momentum)
+- [ ] Verify indicator values are reasonable (RSI 0-100, SMA near current price)
+
+### 1.4 Test paper trade execution
+- [ ] Ask: "Buy $5 of BTC" — agent should:
+  1. Check price first
+  2. Check portfolio
+  3. Execute via `execute_binance_trade` in paper mode
+  4. Return simulated fill details
+- [ ] Verify `TRADING_MODE=paper` produces `_paper: true` in response
+- [ ] Verify the $20 hard cap works: ask "Buy $50 of BTC" — should be rejected
+
+### 1.5 Test testnet trade execution
+- [ ] Change `.env` to `TRADING_MODE=testnet`
+- [ ] Ask: "Buy $5 of ETH" — should execute a real order on Binance testnet
+- [ ] Verify order appears in testnet account (via "Show my recent trades")
+- [ ] Change back to `TRADING_MODE=paper` after testing
+
+### 1.6 Upgrade interactive mode to Ink CLI
+- [ ] Replace the readline REPL in `src/bot/index.ts` with Dexter's Ink-based CLI
+- [ ] This requires creating a `TradingCLI` component that uses `TradingAgent`
+      instead of Dexter's `Agent` in the `useAgentRunner` hook
+- [ ] Real-time tool progress display (spinning indicators, tool call names)
+- [ ] Model switching via `/model` command should still work
+
+### 1.7 Trade Analysis Skill
+- [ ] Create `skills/trade-analysis/SKILL.md` with YAML frontmatter
+- [ ] Workflow: price check → RSI → MA → momentum → news search → recommendation
+- [ ] Register skill discovery path in the trading agent
+- [ ] Test: "Run a trade analysis on BTCUSDT"
+
+---
+
+## Phase 2 — Autonomous Loop
+
+### 2.1 Decision engine
+- [ ] Implement `src/bot/loop/decision-engine.ts`
+- [ ] Core function: `evaluatePair(pair)` → fetches data, computes signals,
+      calls LLM with structured output schema, parses decision
+- [ ] Use Zod structured output: `{action: BUY|SELL|HOLD, confidence: number,
+      reasoning: string, size_usd: number}`
+- [ ] Add self-reflection: second LLM call to review the decision before executing
+
+### 2.2 Scheduler
+- [ ] Implement `src/bot/loop/scheduler.ts`
+- [ ] `setInterval`-based loop over configured pairs
+- [ ] Graceful shutdown on SIGINT/SIGTERM
+- [ ] Error isolation: one pair failing doesn't crash the loop
+- [ ] Circuit breaker: 3 consecutive errors → skip pair for 30 minutes
+
+### 2.3 Wire up autonomous mode
+- [ ] Connect scheduler to `--autonomous` flag in `src/bot/index.ts`
+- [ ] Startup sequence: config → validate → ping Binance → start API → start loop
+- [ ] Run for 1 hour on testnet, verify no crashes, all decisions logged
+
+---
+
+## Phase 3 — Monitoring API & Persistence
+
+### 3.1 Trade log
+- [ ] Implement `src/bot/storage/trade-log.ts` — append-only JSONL
+- [ ] Daily file rotation: `logs/trades-YYYY-MM-DD.jsonl`
+- [ ] Log every decision (including HOLDs) with timestamp, signals, reasoning
+
+### 3.2 Bot state
+- [ ] Implement `src/bot/storage/state.ts` — JSON file persistence
+- [ ] Track: positions, last check times, cumulative P&L, error counts
+- [ ] Load on startup, save after each decision cycle
+
+### 3.3 HTTP API
+- [ ] Implement `src/bot/api/server.ts` using `Bun.serve()`
+- [ ] Routes: `/health`, `/status`, `/portfolio`, `/trades`, `/signals/:pair`
+- [ ] Auth: `X-API-Key` header validated against `BOT_API_KEY` env var
+- [ ] POST `/emergency-stop` — halt trading loop
+- [ ] POST `/config` — update runtime config (pairs, interval)
+- [ ] CORS headers for `trading.godot.no`
+
+---
+
+## Phase 4 — Safety, Testing & Hardening
+
+### 4.1 Safety mechanisms
+- [ ] Daily loss limit: halt trading if cumulative loss > $10/day
+- [ ] Volatility circuit breaker: skip pair if 5-min change > 5%
+- [ ] Emergency stop flag (persisted — survives restarts)
+- [ ] Position limits: max 50% portfolio in single asset
+
+### 4.2 Unit tests
+- [ ] `tests/tools/binance-client.test.ts` — HMAC signing, error handling (mock fetch)
+- [ ] `tests/tools/signals.test.ts` — known inputs → expected RSI/SMA/MACD values
+- [ ] `tests/strategies/rsi-threshold.test.ts` — decision logic
+- [ ] `tests/loop/decision-engine.test.ts` — mock LLM responses, verify decisions
+- [ ] `tests/api/routes.test.ts` — request/response validation
+
+### 4.3 Integration tests
+- [ ] End-to-end testnet: place order → verify fill → check balance change
+- [ ] Full decision cycle with real (cheap) LLM call
+
+### 4.4 Backtester
+- [ ] Implement `tools/backtest.ts`
+- [ ] Load historical klines, replay through decision engine with mock execution
+- [ ] Output: total return, max drawdown, win rate, Sharpe ratio
+
+---
+
+## Phase 5 — Production Deployment
+
+- [ ] Create `ecosystem.config.cjs` for pm2
+- [ ] Set up UFW firewall rules on Manjaro server
+- [ ] Install and configure Cloudflare Tunnel (`cloudflared`)
+- [ ] Route `api.trading.godot.no` → `localhost:3847`
+- [ ] Set up Telegram alerts for errors and daily P&L summary
+- [ ] Test auto-restart: `pm2 kill` → verify bot comes back
+
+---
+
+## Phase 6 — Dashboard (Separate Repo)
+
+- [ ] Create `trading-dashboard` repo
+- [ ] Next.js 15 + Tailwind + Recharts
+- [ ] Pages: dashboard, trades, signals, config, logs
+- [ ] Poll bot API every 30s, cache in Cloudflare KV
+- [ ] Deploy to Cloudflare Pages at `trading.godot.no`
+
+---
+
+## Known Issues / Technical Debt
+
+- [ ] **Indicator accuracy**: The MACD signal line calculation in
+      `src/bot/utils/indicators.ts` uses a simplified approach (recomputing
+      EMA of MACD values from scratch each time). For production, consider
+      a streaming/incremental calculation.
+- [ ] **Node modules symlink**: `node_modules` is a symlink to
+      `src/dexter/node_modules`. If we add bot-specific deps, we'll need
+      our own `package.json` + install. For now, all deps come from Dexter.
+- [ ] **Zod version**: Dexter uses Zod v4.1.13. Our code uses the same
+      import. If Dexter upgrades, verify our schemas still work.
+- [ ] **Readline REPL**: The current interactive mode is a basic readline
+      prompt. Task 1.6 upgrades this to Dexter's full Ink CLI. Until then,
+      there's no real-time tool progress display.
+
+---
+
+## Quick Reference
+
+| Command | What it does |
+|---------|-------------|
+| `bun run src/bot/index.ts --check` | Test connectivity (Binance + API keys) |
+| `bun run src/bot/index.ts` | Interactive REPL with trading tools |
+| `bun run src/bot/index.ts --autonomous` | Autonomous loop (Phase 2) |
+| `bun run src/dexter/src/index.tsx` | Original Dexter CLI (no trading tools) |
+| `bun test` | Run tests (from src/dexter/) |
+
+| File | Purpose |
+|------|---------|
+| `PLAN.md` | Architecture decisions + full roadmap |
+| `src/bot/config.ts` | All bot configuration (Zod schemas) |
+| `src/bot/agent/trading-agent.ts` | Core agent wrapper |
+| `src/bot/tools/registry.ts` | Merges Dexter + trading tools |
+| `src/bot/tools/binance/trade.ts` | Trade execution with safety gates |
+| `src/dexter/.env` | API keys (gitignored) |
