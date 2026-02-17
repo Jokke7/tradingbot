@@ -131,10 +131,52 @@ export function createTradeTools(client: BinanceClient, config: BotConfig) {
 }
 
 /**
+ * Execute a trade programmatically (not as a tool).
+ * Used by the autonomous scheduler.
+ */
+export async function executeTrade(
+  client: BinanceClient,
+  symbol: string,
+  side: 'BUY' | 'SELL',
+  quoteAmountUsd: number,
+  type: 'MARKET' | 'LIMIT' = 'MARKET',
+  price?: string
+): Promise<{ orderId: number; executedQty: string; avgPrice: string; mode: string }> {
+  if (type === 'LIMIT' && !price) {
+    throw new Error('Limit orders require a price');
+  }
+
+  const params: Record<string, string | number> = {
+    symbol: symbol.toUpperCase(),
+    side,
+    type,
+  };
+
+  if (type === 'MARKET') {
+    params.quoteOrderQty = quoteAmountUsd.toString();
+  } else if (type === 'LIMIT' && price) {
+    params.price = price;
+    params.quantity = (quoteAmountUsd / parseFloat(price)).toFixed(8);
+    params.timeInForce = 'GTC';
+  }
+
+  const order = await client.signedPost<OrderResponse>('/v3/order', params);
+
+  return {
+    orderId: order.orderId,
+    executedQty: order.executedQty,
+    avgPrice: parseFloat(order.executedQty) > 0
+      ? (parseFloat(order.cummulativeQuoteQty) / parseFloat(order.executedQty)).toFixed(2)
+      : 'N/A',
+    mode: 'live',
+  };
+}
+
+/**
  * Simulate a paper trade by fetching the current price and generating
  * a mock fill response. No API call to Binance order endpoint.
  */
-async function simulatePaperTrade(
+export async function simulatePaperTrade(
   client: BinanceClient,
   symbol: string,
   side: string,

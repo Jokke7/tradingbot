@@ -51,9 +51,8 @@ async function main() {
   }
 
   if (mode === 'autonomous') {
-    console.log('Autonomous mode is not yet implemented (Phase 2).');
-    console.log('Use --interactive mode for now.');
-    process.exit(1);
+    await runAutonomousMode(botConfig, binanceConfig);
+    return;
   }
 
   // Interactive mode: boot Dexter CLI with trading tools
@@ -109,6 +108,65 @@ async function runConnectivityCheck(binanceConfig: ReturnType<typeof loadBinance
   }
 
   console.log('\nConnectivity check complete.');
+}
+
+/**
+ * Run the autonomous trading loop.
+ */
+async function runAutonomousMode(
+  botConfig: ReturnType<typeof loadBotConfig>,
+  binanceConfig: ReturnType<typeof loadBinanceConfig>
+) {
+  if (!binanceConfig) {
+    console.error('Binance API keys required for autonomous mode.');
+    process.exit(1);
+  }
+
+  const { createScheduler } = await import('./loop/scheduler.js');
+  const { BinanceClient } = await import('./tools/binance/client.js');
+
+  console.log('Starting autonomous trading...\n');
+
+  const client = new BinanceClient(binanceConfig);
+
+  const reachable = await client.ping();
+  if (!reachable) {
+    console.error('Failed to connect to Binance API.');
+    process.exit(1);
+  }
+  console.log('Binance API: Connected');
+
+  const scheduler = createScheduler(botConfig, binanceConfig, botConfig.model);
+
+  scheduler.on('decision', (pair, decision) => {
+    console.log(`[${pair}] ${decision.action} (${decision.confidence}%) - ${decision.reasoning}`);
+  });
+
+  scheduler.on('trade', (pair, result) => {
+    if (result.executed) {
+      console.log(`[${pair}] Trade executed: Order #${result.orderId}`);
+    } else {
+      console.log(`[${pair}] Trade failed: ${result.error}`);
+    }
+  });
+
+  scheduler.on('error', (pair, error) => {
+    console.error(`[${pair}] Error:`, error.message);
+  });
+
+  scheduler.start();
+
+  console.log(`\nAutonomous mode running. Monitoring: ${botConfig.pairs.join(', ')}`);
+  console.log('Press Ctrl+C to stop.\n');
+
+  const shutdown = () => {
+    console.log('\nShutting down...');
+    scheduler.stop();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 /**

@@ -92,22 +92,24 @@ These tasks validate that the agent can use our trading tools correctly.
 ## Phase 2 — Autonomous Loop
 
 ### 2.1 Decision engine
-- [ ] Implement `src/bot/loop/decision-engine.ts`
-- [ ] Core function: `evaluatePair(pair)` → fetches data, computes signals,
+- [x] Implement `src/bot/loop/decision-engine.ts`
+- [x] Core function: `evaluatePair(pair)` → fetches data, computes signals,
       calls LLM with structured output schema, parses decision
-- [ ] Use Zod structured output: `{action: BUY|SELL|HOLD, confidence: number,
+- [x] Use Zod structured output: `{action: BUY|SELL|HOLD, confidence: number,
       reasoning: string, size_usd: number}`
-- [ ] Add self-reflection: second LLM call to review the decision before executing
+- [x] Add self-reflection: second LLM call to review the decision before executing
+
+**Notes**: Decision engine tested - returns BUY/SELL/HOLD with confidence, reasoning.
 
 ### 2.2 Scheduler
-- [ ] Implement `src/bot/loop/scheduler.ts`
-- [ ] `setInterval`-based loop over configured pairs
-- [ ] Graceful shutdown on SIGINT/SIGTERM
-- [ ] Error isolation: one pair failing doesn't crash the loop
-- [ ] Circuit breaker: 3 consecutive errors → skip pair for 30 minutes
+- [x] Implement `src/bot/loop/scheduler.ts`
+- [x] `setInterval`-based loop over configured pairs
+- [x] Graceful shutdown on SIGINT/SIGTERM
+- [x] Error isolation: one pair failing doesn't crash the loop
+- [x] Circuit breaker: 3 consecutive errors → skip pair for 30 minutes
 
 ### 2.3 Wire up autonomous mode
-- [ ] Connect scheduler to `--autonomous` flag in `src/bot/index.ts`
+- [x] Connect scheduler to `--autonomous` flag in `src/bot/index.ts`
 - [ ] Startup sequence: config → validate → ping Binance → start API → start loop
 - [ ] Run for 1 hour on testnet, verify no crashes, all decisions logged
 
