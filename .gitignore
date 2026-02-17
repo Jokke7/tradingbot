@@ -1,0 +1,27 @@
+# Dependencies
+node_modules
+
+# Environment (contains secrets)
+.env
+src/dexter/.env
+
+# Runtime data
+logs/*.jsonl
+logs/*.json
+logs/pm2*.log
+
+# Dexter runtime data
+src/dexter/.dexter/
+
+# Build output
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

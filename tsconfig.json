@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@dexter/*": ["./src/dexter/src/*"],
+      "@bot/*": ["./src/bot/*"]
+    }
+  },
+  "include": ["src/bot/**/*"],
+  "exclude": ["node_modules", "dist", "src/dexter"]
+}

@@ -1,0 +1,3 @@
+[submodule "src/dexter"]
+	path = src/dexter
+	url = https://github.com/virattt/dexter.git
