@@ -118,22 +118,24 @@ These tasks validate that the agent can use our trading tools correctly.
 ## Phase 3 — Monitoring API & Persistence
 
 ### 3.1 Trade log
-- [ ] Implement `src/bot/storage/trade-log.ts` — append-only JSONL
-- [ ] Daily file rotation: `logs/trades-YYYY-MM-DD.jsonl`
-- [ ] Log every decision (including HOLDs) with timestamp, signals, reasoning
+- [x] Implement `src/bot/storage/trade-log.ts` — append-only JSONL
+- [x] Daily file rotation: `logs/trades-YYYY-MM-DD.jsonl`
+- [x] Log every decision (including HOLDs) with timestamp, signals, reasoning
 
 ### 3.2 Bot state
-- [ ] Implement `src/bot/storage/state.ts` — JSON file persistence
-- [ ] Track: positions, last check times, cumulative P&L, error counts
-- [ ] Load on startup, save after each decision cycle
+- [x] Implement `src/bot/storage/state.ts` — JSON file persistence
+- [x] Track: positions, last check times, cumulative P&L, error counts
+- [x] Load on startup, save after each decision cycle
 
 ### 3.3 HTTP API
-- [ ] Implement `src/bot/api/server.ts` using `Bun.serve()`
-- [ ] Routes: `/health`, `/status`, `/portfolio`, `/trades`, `/signals/:pair`
-- [ ] Auth: `X-API-Key` header validated against `BOT_API_KEY` env var
-- [ ] POST `/emergency-stop` — halt trading loop
-- [ ] POST `/config` — update runtime config (pairs, interval)
-- [ ] CORS headers for `trading.godot.no`
+- [x] Implement `src/bot/api/server.ts` using `Bun.serve()`
+- [x] Routes: `/health`, `/status`, `/portfolio`, `/trades`, `/signals/:pair`
+- [x] Auth: `X-API-Key` header validated against `BOT_API_KEY` env var
+- [x] POST `/emergency-stop` — halt trading loop
+- [x] POST `/config` — update runtime config (pairs, interval)
+- [x] CORS headers for `trading.godot.no`
+
+**Notes**: API server starts with autonomous mode on port 3847. Tested /health and /status endpoints.
 
 ---
 

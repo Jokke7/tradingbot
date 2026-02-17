@@ -156,7 +156,27 @@ async function runAutonomousMode(
 
   scheduler.start();
 
+  // Start API server
+  const { startApiServer, setScheduler, setState, setBinanceClient } = await import('./api/server.js');
+  const { loadState } = await import('./storage/state.js');
+
+  setScheduler(scheduler);
+  setBinanceClient(client);
+
+  const state = loadState();
+  setState(state);
+
+  const apiPort = botConfig.apiPort;
+  const apiKey = botConfig.apiKey;
+  
+  await startApiServer({
+    port: apiPort,
+    apiKey: apiKey || 'dev-only-key',
+    corsOrigin: process.env.CORS_ORIGIN || '*',
+  });
+
   console.log(`\nAutonomous mode running. Monitoring: ${botConfig.pairs.join(', ')}`);
+  console.log(`API server: http://localhost:${apiPort}`);
   console.log('Press Ctrl+C to stop.\n');
 
   const shutdown = () => {
