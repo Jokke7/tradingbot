@@ -225,6 +225,19 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
       const url = new URL(req.url);
       const path = url.pathname;
 
+      // Handle CORS preflight
+      if (req.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': config.corsOrigin || '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'X-API-Key, Content-Type',
+            'Access-Control-Max-Age': '86400',
+          },
+        });
+      }
+
       for (const [route, handler] of Object.entries(routes)) {
         const match = path.match(new RegExp('^' + route.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'));
         if (match) {
