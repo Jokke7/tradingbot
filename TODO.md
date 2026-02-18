@@ -171,7 +171,7 @@ These tasks validate that the agent can use our trading tools correctly.
 ## Phase 5 — Production Deployment
 
 - [x] Create `ecosystem.config.cjs` for pm2
-- [ ] Set up UFW firewall rules on Manjaro server
+- [x] Set up UFW firewall rules on Manjaro server
 - [x] Install and configure Cloudflare Tunnel (`cloudflared`)
 - [ ] Route `api.trading.godot.no` → `localhost:3847`
 - [ ] Set up Telegram alerts for errors and daily P&L summary
