@@ -93,6 +93,52 @@ async function handlePortfolio(ctx: ApiContext, config: ApiConfig): Promise<Resp
   }
 }
 
+async function handlePositions(ctx: ApiContext, config: ApiConfig): Promise<Response> {
+  if (!parseAuthHeader(ctx.req, config)) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  if (!clientRef) {
+    return errorResponse('Binance client not available', 503);
+  }
+
+  try {
+    const state = loadState();
+    const positionsWithPrice = await Promise.all(
+      state.positions.map(async (pos) => {
+        try {
+          const ticker = await clientRef!.publicGet('/v3/ticker/price', { symbol: pos.symbol });
+          const price = parseFloat((ticker as { price: string }).price);
+          const value = pos.quantity * price;
+          return {
+            symbol: pos.symbol,
+            quantity: pos.quantity,
+            avgPrice: pos.avgPrice,
+            currentPrice: price,
+            value: value,
+            pnl: value - (pos.quantity * pos.avgPrice),
+            pnlPercent: ((price - pos.avgPrice) / pos.avgPrice) * 100,
+          };
+        } catch {
+          return {
+            symbol: pos.symbol,
+            quantity: pos.quantity,
+            avgPrice: pos.avgPrice,
+            currentPrice: pos.avgPrice,
+            value: pos.quantity * pos.avgPrice,
+            pnl: 0,
+            pnlPercent: 0,
+          };
+        }
+      })
+    );
+
+    return jsonResponse({ positions: positionsWithPrice });
+  } catch (e) {
+    return errorResponse(`Failed to fetch positions: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 async function handleTrades(ctx: ApiContext, config: ApiConfig): Promise<Response> {
   if (!parseAuthHeader(ctx.req, config)) {
     return errorResponse('Unauthorized', 401);
@@ -213,6 +259,7 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
     '/health': handleHealth,
     '/status': handleStatus,
     '/portfolio': handlePortfolio,
+    '/positions': handlePositions,
     '/trades': handleTrades,
     '/signals/:pair': handleSignals,
     '/emergency-stop': handleEmergencyStop,
