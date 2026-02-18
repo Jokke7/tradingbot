@@ -1,11 +1,13 @@
 import { EventEmitter } from 'events';
 import type { TradingDecision } from './decision-engine.js';
 import { createDecisionEngine } from './decision-engine.js';
+import { createPortfolioManager, type PortfolioRecommendation } from './portfolio-manager.js';
 import { BinanceClient } from '../tools/binance/client.js';
 import { executeTrade } from '../tools/binance/trade.js';
 import type { BotConfig, BinanceConfig } from '../config.js';
 import { loadState, saveState, recordTradePnl, updatePosition, type BotState } from '../storage/state.js';
 import { logDecision, logExecution, logError } from '../storage/trade-log.js';
+import { logExecutedRecommendation, logRejectedRecommendation } from '../storage/portfolio-log.js';
 
 export interface SchedulerConfig {
   pairs: string[];
@@ -36,8 +38,12 @@ export class Scheduler extends EventEmitter {
   private client: BinanceClient;
   private tradingMode: 'paper' | 'testnet' | 'live';
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private portfolioIntervalId: ReturnType<typeof setInterval> | null = null;
   private running = false;
-  private circuitBreakers = new Map<string, { errors: number; skipUntil: number }>();
+  private circuitBreakers: Map<string, { errors: number; skipUntil: number }>;
+  private portfolioManager: ReturnType<typeof createPortfolioManager>;
+
+  private static readonly PORTFOLIO_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
   constructor(
     config: SchedulerConfig,
@@ -50,6 +56,8 @@ export class Scheduler extends EventEmitter {
     this.model = model;
     this.client = client;
     this.tradingMode = tradingMode;
+    this.circuitBreakers = new Map();
+    this.portfolioManager = createPortfolioManager(client);
   }
 
   start(): void {
@@ -57,9 +65,14 @@ export class Scheduler extends EventEmitter {
     this.running = true;
     this.emit('loop:start');
     console.log(`[Scheduler] Started - checking ${this.config.pairs.join(', ')} every ${this.config.intervalMs / 1000}s`);
+    console.log(`[PortfolioManager] Will consult Dexter every ${Scheduler.PORTFOLIO_INTERVAL_MS / 60000} minutes`);
 
     this.runLoop();
     this.intervalId = setInterval(() => this.runLoop(), this.config.intervalMs);
+
+    // Start portfolio manager (run immediately, then hourly)
+    this.runPortfolioManager();
+    this.portfolioIntervalId = setInterval(() => this.runPortfolioManager(), Scheduler.PORTFOLIO_INTERVAL_MS);
   }
 
   stop(): void {
@@ -68,6 +81,10 @@ export class Scheduler extends EventEmitter {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
+    }
+    if (this.portfolioIntervalId) {
+      clearInterval(this.portfolioIntervalId);
+      this.portfolioIntervalId = null;
     }
     this.emit('loop:stop');
     console.log('[Scheduler] Stopped');
@@ -81,6 +98,118 @@ export class Scheduler extends EventEmitter {
     for (const pair of this.config.pairs) {
       if (!this.running) break;
       await this.evaluatePair(pair);
+    }
+  }
+
+  private async runPortfolioManager(): Promise<void> {
+    if (!this.running) return;
+    
+    const state = loadState();
+    if (state.emergencyStop) {
+      console.log('[PortfolioManager] Emergency stop active, skipping');
+      return;
+    }
+
+    console.log('[PortfolioManager] Consulting Dexter for portfolio advice...');
+    
+    try {
+      const recommendations = await this.portfolioManager.consult();
+      
+      if (recommendations.length === 0) {
+        console.log('[PortfolioManager] No changes recommended');
+        return;
+      }
+
+      console.log(`[PortfolioManager] Received ${recommendations.length} recommendations`);
+
+      for (const rec of recommendations) {
+        if (!this.running) break;
+        
+        console.log(`[PortfolioManager] ${rec.symbol}: ${rec.action} - ${rec.reasoning}`);
+        
+        // Execute SELL recommendations immediately
+        if (rec.action === 'SELL') {
+          await this.executePortfolioSell(rec.symbol);
+        }
+        // Execute BUY recommendations (respecting position limit)
+        else if (rec.action === 'BUY') {
+          await this.executePortfolioBuy(rec);
+        }
+      }
+    } catch (error) {
+      console.error('[PortfolioManager] Error:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async executePortfolioSell(symbol: string): Promise<void> {
+    const state = loadState();
+    const position = state.positions.find(p => p.symbol === symbol);
+    
+    if (!position) {
+      console.log(`[PortfolioManager] Cannot sell ${symbol} - no position held`);
+      logRejectedRecommendation(symbol, 'SELL', 0, 'No position held', 'No position held');
+      return;
+    }
+
+    try {
+      const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol });
+      const price = parseFloat(ticker.price);
+      const value = position.quantity * price;
+      
+      const decision = {
+        action: 'SELL' as const,
+        confidence: 100,
+        reasoning: 'Portfolio manager recommendation',
+        size_usd: value,
+      };
+
+      const result = await this.executeTrade(symbol, decision);
+      
+      if (result.executed) {
+        // Remove position
+        state.positions = state.positions.filter(p => p.symbol !== symbol);
+        recordTradePnl(state, value - position.avgPrice * position.quantity);
+        saveState(state);
+        console.log(`[PortfolioManager] Sold ${symbol} - executed`);
+        logExecutedRecommendation(symbol, 'SELL', value, 'Portfolio manager recommendation');
+      }
+    } catch (error) {
+      console.error(`[PortfolioManager] Failed to sell ${symbol}:`, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async executePortfolioBuy(rec: { symbol: string; amountUsd: number }): Promise<void> {
+    const state = loadState();
+    
+    // Check position limit
+    if (state.positions.length >= 5) {
+      console.log(`[PortfolioManager] Cannot buy ${rec.symbol} - max positions (5) reached`);
+      logRejectedRecommendation(rec.symbol, 'BUY', rec.amountUsd, 'Portfolio manager recommendation', 'Max positions (5) reached');
+      return;
+    }
+
+    try {
+      const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol: rec.symbol });
+      const price = parseFloat(ticker.price);
+      const quantity = rec.amountUsd / price;
+      
+      const decision = {
+        action: 'BUY' as const,
+        confidence: 100,
+        reasoning: 'Portfolio manager recommendation',
+        size_usd: rec.amountUsd,
+      };
+
+      const result = await this.executeTrade(rec.symbol, decision);
+      
+      if (result.executed && result.avgPrice) {
+        updatePosition(state, rec.symbol, quantity, result.avgPrice);
+        saveState(state);
+        console.log(`[PortfolioManager] Bought ${rec.symbol} - executed`);
+        logExecutedRecommendation(rec.symbol, 'BUY', rec.amountUsd, 'Portfolio manager recommendation');
+      }
+    } catch (error) {
+      console.error(`[PortfolioManager] Failed to buy ${rec.symbol}:`, error instanceof Error ? error.message : String(error));
     }
   }
 
