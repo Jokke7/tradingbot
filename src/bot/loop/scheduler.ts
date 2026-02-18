@@ -202,20 +202,61 @@ export class Scheduler extends EventEmitter {
     }
 
     try {
-      const account = await this.client.signedGet<{ balances: { asset: string; free: string }[] }>('/v3/account', {});
-      const usdtBalance = account.balances.find(b => b.asset === 'USDT');
-      const usdt = parseFloat(usdtBalance?.free || '0');
-      
-      const totalPortfolio = usdt + sizeUsd;
-      const positionPercent = (sizeUsd / totalPortfolio) * 100;
+      const account = await this.client.signedGet<{ balances: { asset: string; free: string; locked: string }[] }>('/v3/account', {});
+
+      // Get current prices for all assets
+      const balances = account.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
+      let totalPortfolioValue = 0;
+
+      for (const balance of balances) {
+        const amount = parseFloat(balance.free) + parseFloat(balance.locked);
+        if (amount <= 0) continue;
+
+        if (balance.asset === 'USDT') {
+          totalPortfolioValue += amount;
+        } else {
+          // Get price in USDT
+          try {
+            const symbol = `${balance.asset}USDT`;
+            const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol });
+            const price = parseFloat(ticker.price);
+            totalPortfolioValue += amount * price;
+          } catch {
+            // Skip assets we can't price
+            continue;
+          }
+        }
+      }
+
+      // Add the proposed trade size to calculate post-trade concentration
+      const postTradeValue = totalPortfolioValue + sizeUsd;
+      const assetSymbol = pair.replace('USDT', '');
+      const assetBalance = balances.find(b => b.asset === assetSymbol);
+      const currentAssetAmount = assetBalance ? parseFloat(assetBalance.free) + parseFloat(assetBalance.locked) : 0;
+
+      // Get current price of the asset
+      let currentAssetValue = 0;
+      if (currentAssetAmount > 0) {
+        const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol: pair });
+        const price = parseFloat(ticker.price);
+        currentAssetValue = currentAssetAmount * price;
+      }
+
+      // Calculate post-trade position: current + new
+      const postTradeAssetValue = currentAssetValue + sizeUsd;
+      const positionPercent = (postTradeAssetValue / postTradeValue) * 100;
 
       if (positionPercent > 50) {
-        return { allowed: false, reason: `Would be ${positionPercent.toFixed(1)}% of portfolio (max 50%)` };
+        return {
+          allowed: false,
+          reason: `Would be ${positionPercent.toFixed(1)}% of portfolio (max 50%). Current: $${currentAssetValue.toFixed(2)}, Post-trade: $${postTradeAssetValue.toFixed(2)}, Total portfolio: $${postTradeValue.toFixed(2)}`
+        };
       }
 
       return { allowed: true };
-    } catch {
-      return { allowed: true };
+    } catch (error) {
+      console.error('[Scheduler] Position limit check failed:', error);
+      return { allowed: true }; // Allow on error to prevent blocking trading
     }
   }
 
