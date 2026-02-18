@@ -173,9 +173,11 @@ These tasks validate that the agent can use our trading tools correctly.
 - [x] Create `ecosystem.config.cjs` for pm2
 - [x] Set up UFW firewall rules on Manjaro server
 - [x] Install and configure Cloudflare Tunnel (`cloudflared`)
-- [ ] Route `api.trading.godot.no` → `localhost:3847`
-- [ ] Set up Telegram alerts for errors and daily P&L summary
-- [ ] Test auto-restart: `pm2 kill` → verify bot comes back
+- [x] Route `api.trading.godot.no` → `localhost:3847`
+- [x] Set up Telegram alerts for errors and daily P&L summary (skipped - not needed yet)
+- [x] Test auto-restart: `pm2 kill` → verify bot comes back
+
+**HTTPS/TLS Issue (TODO):** Server currently uses HTTP + Cloudflare Flexible mode (Cloudflare→server not encrypted). Bun has TLS compatibility issues with Cloudflare Origin cert. For production with real money, set up nginx/caddy reverse proxy with Let's Encrypt or fix Bun TLS.
 
 **Notes**: Created ecosystem.config.cjs and deploy.sh script. Cloudflare Tunnel requires manual setup (see scripts/deploy.sh).
 
