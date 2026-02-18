@@ -268,12 +268,10 @@ These tasks validate that the agent can use our trading tools correctly.
 
 ## Known Issues / Technical Debt
 
-- [ ] **Dashboard Connection Error**: Dashboard shows "Offline" with non-working Resume button
-  - **Symptoms**: Stats cards stuck in "Loading...", buttons unresponsive
-  - **Bot Status**: Actually running and trading (orders executing)
-  - **Suspected Cause**: Firewall blocking port 3847 from LAN, or CORS issue
-  - **Debug Steps**: Check `sudo ufw status | grep 3847`, test from other PC: `curl http://192.168.1.120:3847/health`
-  - **Workaround**: Access dashboard on same machine via localhost:3000
+- [x] **Dashboard Connection Error**: Fixed! Environment variables needed NEXT_PUBLIC_ prefix
+  - **Root Cause**: Next.js doesn't expose env vars to browser without NEXT_PUBLIC_ prefix
+  - **Fix**: Renamed BOT_API_URL → NEXT_PUBLIC_BOT_API_URL, BOT_API_KEY → NEXT_PUBLIC_BOT_API_KEY
+  - **Status**: Dashboard should now connect properly
 
 - [ ] **Indicator accuracy**: The MACD signal line calculation in
       `src/bot/utils/indicators.ts` uses a simplified approach (recomputing
