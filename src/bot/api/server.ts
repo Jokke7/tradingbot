@@ -66,7 +66,11 @@ async function handleStatus(_ctx: ApiContext, _config: ApiConfig): Promise<Respo
   });
 }
 
-async function handlePortfolio(_ctx: ApiContext, _config: ApiConfig): Promise<Response> {
+async function handlePortfolio(ctx: ApiContext, config: ApiConfig): Promise<Response> {
+  if (!parseAuthHeader(ctx.req, config)) {
+    return errorResponse('Unauthorized', 401);
+  }
+
   if (!clientRef) {
     return errorResponse('Binance client not available', 503);
   }
@@ -88,13 +92,17 @@ async function handlePortfolio(_ctx: ApiContext, _config: ApiConfig): Promise<Re
   }
 }
 
-async function handleTrades(_ctx: ApiContext): Promise<Response> {
+async function handleTrades(ctx: ApiContext, config: ApiConfig): Promise<Response> {
+  if (!parseAuthHeader(ctx.req, config)) {
+    return errorResponse('Unauthorized', 401);
+  }
+
   const state = loadState();
   const today = new Date().toISOString().split('T')[0];
-  
+
   const { readFileSync, existsSync } = await import('fs');
   const logFile = `logs/trades-${today}.jsonl`;
-  
+
   if (!existsSync(logFile)) {
     return jsonResponse({ trades: [], date: today });
   }
@@ -108,7 +116,11 @@ async function handleTrades(_ctx: ApiContext): Promise<Response> {
   }
 }
 
-async function handleSignals(ctx: ApiContext, _config: ApiConfig): Promise<Response> {
+async function handleSignals(ctx: ApiContext, config: ApiConfig): Promise<Response> {
+  if (!parseAuthHeader(ctx.req, config)) {
+    return errorResponse('Unauthorized', 401);
+  }
+
   const symbol = ctx.params.pair?.toUpperCase();
   if (!symbol) {
     return errorResponse('Missing pair parameter');
@@ -125,9 +137,9 @@ async function handleSignals(ctx: ApiContext, _config: ApiConfig): Promise<Respo
     ]);
 
     const closes = (klines as number[][]).map(k => parseFloat(k[4] as unknown as string));
-    
+
     const { rsi, sma, macd } = await import('../utils/indicators.js');
-    
+
     const data = {
       symbol,
       price: (ticker as { lastPrice: string }).lastPrice,
