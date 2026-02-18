@@ -168,15 +168,19 @@ async function runAutonomousMode(
 
   const apiPort = botConfig.apiPort;
   const apiKey = botConfig.apiKey;
+  const tlsCert = process.env.TLS_CERT_FILE;
+  const tlsKey = process.env.TLS_KEY_FILE;
   
   await startApiServer({
     port: apiPort,
     apiKey: apiKey || 'dev-only-key',
     corsOrigin: process.env.CORS_ORIGIN || '*',
+    tls: tlsCert && tlsKey ? { certFile: tlsCert, keyFile: tlsKey } : undefined,
   });
 
+  const protocol = tlsCert && tlsKey ? 'https' : 'http';
   console.log(`\nAutonomous mode running. Monitoring: ${botConfig.pairs.join(', ')}`);
-  console.log(`API server: http://localhost:${apiPort}`);
+  console.log(`API server: ${protocol}://localhost:${apiPort}`);
   console.log('Press Ctrl+C to stop.\n');
 
   const shutdown = () => {

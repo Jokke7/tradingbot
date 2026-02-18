@@ -7,6 +7,10 @@ export interface ApiConfig {
   port: number;
   apiKey: string;
   corsOrigin: string;
+  tls?: {
+    certFile: string;
+    keyFile: string;
+  };
 }
 
 interface ApiContext {
@@ -201,9 +205,9 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
     '/config': handleConfig,
   };
 
-  const server = Bun.serve({
+  const serverOptions: Bun.ServeOptions = {
     port: config.port,
-    fetch(req) {
+    fetch(req: Request) {
       const url = new URL(req.url);
       const path = url.pathname;
 
@@ -232,8 +236,19 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
 
       return errorResponse('Not found', 404);
     },
-  });
+  };
 
-  console.log(`[API] Server running on port ${config.port}`);
+  if (config.tls) {
+    Object.assign(serverOptions, {
+      tls: {
+        cert: await Bun.file(config.tls.certFile).text(),
+        key: await Bun.file(config.tls.keyFile).text(),
+      },
+    });
+  }
+
+  const server = Bun.serve(serverOptions);
+
+  console.log(`[API] Server running on port ${config.port}${config.tls ? ' (HTTPS)' : ''}`);
   return server;
 }
