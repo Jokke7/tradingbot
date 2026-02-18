@@ -26,3 +26,9 @@ Thumbs.db
 *.swp
 *.swo
 certs/
+
+# Local development docs (not needed in remote repo)
+TODO.md
+PLAN.md
+project_outline.md
+AGENTS.md
