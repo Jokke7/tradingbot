@@ -2,9 +2,10 @@ import { EventEmitter } from 'events';
 import type { TradingDecision } from './decision-engine.js';
 import { createDecisionEngine } from './decision-engine.js';
 import { BinanceClient } from '../tools/binance/client.js';
-import { executeTrade, simulatePaperTrade } from '../tools/binance/trade.js';
+import { executeTrade } from '../tools/binance/trade.js';
 import type { BotConfig, BinanceConfig } from '../config.js';
 import { loadState, saveState, recordTradePnl, type BotState } from '../storage/state.js';
+import { logDecision, logExecution, logError } from '../storage/trade-log.js';
 
 export interface SchedulerConfig {
   pairs: string[];
@@ -18,6 +19,7 @@ export interface TradeResult {
   executed: boolean;
   orderId?: number;
   error?: string;
+  avgPrice?: number;
 }
 
 export interface SchedulerEvents {
@@ -120,6 +122,16 @@ export class Scheduler extends EventEmitter {
       this.emit('decision', pair, decision);
       console.log(`[Scheduler] ${pair}: ${decision.action} (confidence: ${decision.confidence}%) - ${decision.reasoning}`);
 
+      // Log the decision (including HOLDs)
+      logDecision(
+        pair,
+        decision.action,
+        decision.confidence,
+        decision.reasoning,
+        decision.size_usd,
+        this.tradingMode
+      );
+
       if (decision.action !== 'HOLD' && decision.size_usd > 0) {
         // Safety check: position limit
         const positionCheck = await this.checkPositionLimit(pair, decision.size_usd, decision.action);
@@ -131,10 +143,26 @@ export class Scheduler extends EventEmitter {
         const result = await this.executeTrade(pair, decision);
         this.emit('trade', pair, result);
 
-        // Record P&L
         if (result.executed && result.orderId) {
+          // Record P&L and log successful trade
           recordTradePnl(state, decision.action === 'BUY' ? 0 : -decision.size_usd * 0.001);
           saveState(state);
+
+          // Log the executed trade
+          const price = result.avgPrice || 0;
+          logExecution(
+            pair,
+            decision.action,
+            decision.confidence,
+            decision.reasoning,
+            decision.size_usd,
+            result.orderId,
+            price,
+            this.tradingMode
+          );
+        } else if (result.error) {
+          // Log trade error
+          logError(pair, decision.action, result.error, this.tradingMode);
         }
       }
 
@@ -194,14 +222,14 @@ export class Scheduler extends EventEmitter {
   private async executeTrade(pair: string, decision: TradingDecision): Promise<TradeResult> {
     try {
       const side = decision.action as 'BUY' | 'SELL';
-      
+
       let result: { orderId: number; executedQty: string; avgPrice: string; mode: string };
-      
+
       if (this.tradingMode === 'paper') {
         const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol: pair });
         const price = parseFloat(ticker.price);
         const quantity = decision.size_usd / price;
-        
+
         result = {
           orderId: Math.floor(Math.random() * 1_000_000),
           executedQty: quantity.toFixed(8),
@@ -222,6 +250,7 @@ export class Scheduler extends EventEmitter {
         decision,
         executed: true,
         orderId: result.orderId,
+        avgPrice: parseFloat(result.avgPrice),
       };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
