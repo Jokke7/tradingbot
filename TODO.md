@@ -3,7 +3,7 @@
 > Actionable task list for continuing development.
 > Check items off as you complete them. See PLAN.md for full architecture context.
 >
-> **Current state**: Phase 1 complete! All trading tools verified, trade analysis skill created.
+> **Current state**: Phase 5 complete! Bot running in production at api.trading.godot.no
 
 ---
 
@@ -25,7 +25,34 @@ bun run src/bot/index.ts --autonomous
 
 ---
 
-## Phase 1 — Interactive Trading Tools (NEXT)
+## Completed Phases
+
+- ✅ Phase 1: Interactive Trading Tools
+- ✅ Phase 2: Autonomous Loop  
+- ✅ Phase 3: Monitoring API & Persistence
+- ✅ Phase 4.1: Safety Mechanisms
+- ✅ Phase 4.2: Unit Tests
+- ✅ Phase 5: Production Deployment
+
+---
+
+## Next Up
+
+### Phase 4.3: Integration Tests
+- [ ] End-to-end testnet: place order → verify fill → check balance change
+- [ ] Full decision cycle with real (cheap) LLM call
+
+### Phase 4.4: Backtester
+- [ ] Implement `tools/backtest.ts`
+- [ ] Load historical klines, replay through decision engine
+- [ ] Output: total return, max drawdown, win rate, Sharpe ratio
+
+### Phase 6: Dashboard (Separate Repo)
+- [ ] Create `trading-dashboard` repo
+- [ ] Next.js 15 + Tailwind + Recharts
+- [ ] Deploy to Cloudflare Pages at `trading.godot.no`
+
+---
 
 The tools exist but haven't been tested end-to-end with the LLM yet.
 These tasks validate that the agent can use our trading tools correctly.
