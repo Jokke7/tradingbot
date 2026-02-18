@@ -3,7 +3,27 @@
 > Actionable task list for continuing development.
 > Check items off as you complete them. See PLAN.md for full architecture context.
 >
-> **Current state**: Phase 5 complete! Bot running in production at api.trading.godot.no
+> **Current state**: Phase 4.3 complete! Bot tested in interactive + autonomous mode. Order #3489318 executed on testnet.
+
+---
+
+## For Kimi ( Vacation Handoff)
+
+**What's working:**
+- Interactive mode: `bun run src/bot/index.ts`
+- Autonomous mode: `bun run src/bot/index.ts --autonomous`
+- Testnet trading works (Order #3489318 executed)
+- API at api.trading.godot.no
+- All safety mechanisms working
+
+**Known issues:**
+- OpenRouter 403 warnings (still works)
+- Run tests with: `cd src/dexter && bun test`
+- Run typecheck: `cd src/dexter && bun run typecheck`
+
+**Next priorities:**
+1. Phase 4.4: Backtester
+2. Phase 6: Dashboard (separate repo)
 
 ---
 
@@ -19,7 +39,7 @@ bun run src/bot/index.ts --check
 # Interactive mode (REPL — queries go to LLM)
 bun run src/bot/index.ts
 
-# Autonomous mode (not yet implemented)
+# Autonomous mode
 bun run src/bot/index.ts --autonomous
 ```
 
@@ -39,8 +59,27 @@ bun run src/bot/index.ts --autonomous
 ## Next Up
 
 ### Phase 4.3: Integration Tests
-- [ ] End-to-end testnet: place order → verify fill → check balance change
-- [ ] Full decision cycle with real (cheap) LLM call
+- [x] End-to-end testnet: place order → verify fill → check balance change
+- [x] Full decision cycle with real (cheap) LLM call
+
+**Notes**: Created `tests/integration/trading-flow.test.ts` with 19 tests.
+
+### Phase 4.3.1: OpenRouter Fix (Hotfix)
+- [x] Added HTTP-Referer header to OpenRouter LangChain config
+- [x] Fixed 403 Forbidden errors on tool calls
+
+### Phase 4.3.2: Live Testing
+- [x] Tested interactive mode - works
+- [x] Tested autonomous mode - executed Order #3489318 (SELL BTC) on testnet
+- [x] Verified self-reflection catches bad trades (ETH HOLD rejected)
+
+### Phase 4.3.3: Critical Bug Fixes
+- [x] **Fix 1**: Add trade logging to scheduler (logDecision, logExecution, logError)
+- [x] **Fix 2**: Fix position limit calculation (sum all assets, not just USDT)
+- [x] **Fix 3**: Fix volatility check (use 5m klines instead of 24h ticker)
+- [x] **Fix 4**: Fix P&L calculation (track positions, calculate realized P&L on SELL)
+- [x] **Fix 5**: Add API authentication to /portfolio, /trades, /signals/:pair
+- [ ] Run bot for extended test to verify all fixes work in practice
 
 ### Phase 4.4: Backtester
 - [ ] Implement `tools/backtest.ts`
