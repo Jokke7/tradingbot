@@ -184,10 +184,24 @@ export class Scheduler extends EventEmitter {
 
   private async checkVolatility(pair: string): Promise<{ safe: boolean; change: number }> {
     try {
-      const ticker = await this.client.publicGet<{ priceChangePercent: string }>('/v3/ticker/24hr', { symbol: pair });
-      const change = Math.abs(parseFloat(ticker.priceChangePercent));
+      // Fetch last 2 candles (5m interval) to calculate recent change
+      const klines = await this.client.publicGet<[number, string, string, string, string, string, number, string, number, string, string, string][]>('/v3/klines', {
+        symbol: pair,
+        interval: '5m',
+        limit: 2
+      });
+
+      if (klines.length < 2) {
+        return { safe: true, change: 0 };
+      }
+
+      const prevClose = parseFloat(klines[0][4]);
+      const currentClose = parseFloat(klines[1][4]);
+      const change = Math.abs((currentClose - prevClose) / prevClose * 100);
+
       return { safe: change <= 5, change };
-    } catch {
+    } catch (error) {
+      console.error(`[Scheduler] Volatility check failed for ${pair}:`, error);
       return { safe: true, change: 0 };
     }
   }
