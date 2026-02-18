@@ -56,26 +56,40 @@ function calculateIndicators(candles: Array<{ close: number }>, currentIndex: nu
   return { rsi: currentRsi, sma20: currentSma20, sma50: currentSma50, sma200: currentSma200, macd: currentMacd, momentum: currentRoc };
 }
 
-function generateSignal(price: number, indicators: ReturnType<typeof calculateIndicators>): 'BUY' | 'SELL' | 'HOLD' {
+function generateSignal(price: number, indicators: ReturnType<typeof calculateIndicators>, volume: number, avgVolume: number, position: number, entryPrice: number): 'BUY' | 'SELL' | 'HOLD' {
   const { rsi, sma20, sma50, sma200, macd, momentum } = indicators;
   
-  const priceBelowMajorMas = price < sma50 && price < sma200;
-  const priceAboveMajorMas = price > sma50 && price > sma200;
-  const rsiOversold = rsi < 35;
-  const rsiOverbought = rsi > 65;
-  const bearishMomentum = momentum < 0 && macd.histogram < 0;
-  const bullishMomentum = momentum > 0 && macd.histogram > 0;
+  const priceAboveAllMas = price > sma20 && price > sma50 && (price > sma200 || isNaN(sma200));
+  const priceBelowAllMas = price < sma20 && price < sma50 && (price < sma200 || isNaN(sma200));
+  const strongUptrend = sma20 > sma50;
+  const strongDowntrend = sma20 < sma50;
+  const rsiOversold = rsi < 25;
+  const rsiOverbought = rsi > 75;
+  const rsiFavorable = rsi < 35 || rsi > 65;
+  const bullishMacd = macd.histogram > 0;
+  const bearishMacd = macd.histogram < 0;
+  const highVolume = volume > avgVolume;
   
-  if (rsiOversold && bullishMomentum && priceAboveMajorMas) {
+  if (position > 0) {
+    const pnlPercent = ((price - entryPrice) / entryPrice) * 100;
+    if (pnlPercent > 3 || (priceBelowAllMas && bearishMacd)) {
+      return 'SELL';
+    }
+    if (pnlPercent < -2 && (rsiOverbought || bearishMacd)) {
+      return 'SELL';
+    }
+  }
+  
+  if (rsiOversold && priceAboveAllMas && (bullishMacd || momentum > 0) && highVolume) {
     return 'BUY';
   }
-  if (rsiOverbought && bearishMomentum && priceBelowMajorMas) {
+  if (rsiOverbought && priceBelowAllMas && bearishMacd) {
     return 'SELL';
   }
-  if (priceBelowMajorMas && bearishMomentum) {
+  if (strongDowntrend && priceBelowAllMas && bearishMacd && rsiFavorable) {
     return 'SELL';
   }
-  if (priceAboveMajorMas && bullishMomentum) {
+  if (strongUptrend && priceAboveAllMas && bullishMacd && rsiFavorable && highVolume) {
     return 'BUY';
   }
   return 'HOLD';
@@ -108,7 +122,8 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   for (let i = 50; i < candles.length; i++) {
     const candle = candles[i];
     const indicators = calculateIndicators(candles, i);
-    const signal = generateSignal(candle.close, indicators);
+    const avgVolume = candles.slice(Math.max(0, i - 20), i).reduce((sum, c) => sum + c.volume, 0) / 20;
+    const signal = generateSignal(candle.close, indicators, candle.volume, avgVolume, position, entryPrice);
 
     const currentValue = balance + position * candle.close;
     equityCurve.push(currentValue);
