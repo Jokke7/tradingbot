@@ -4,7 +4,7 @@ import { createDecisionEngine } from './decision-engine.js';
 import { BinanceClient } from '../tools/binance/client.js';
 import { executeTrade } from '../tools/binance/trade.js';
 import type { BotConfig, BinanceConfig } from '../config.js';
-import { loadState, saveState, recordTradePnl, type BotState } from '../storage/state.js';
+import { loadState, saveState, recordTradePnl, updatePosition, type BotState } from '../storage/state.js';
 import { logDecision, logExecution, logError } from '../storage/trade-log.js';
 
 export interface SchedulerConfig {
@@ -144,12 +144,42 @@ export class Scheduler extends EventEmitter {
         this.emit('trade', pair, result);
 
         if (result.executed && result.orderId) {
-          // Record P&L and log successful trade
-          recordTradePnl(state, decision.action === 'BUY' ? 0 : -decision.size_usd * 0.001);
+          // Calculate P&L for this trade
+          const price = result.avgPrice || 0;
+          const quantity = decision.size_usd / price;
+          let tradePnl = 0;
+
+          if (decision.action === 'SELL') {
+            // Calculate realized P&L: (sellPrice - avgEntryPrice) * quantity
+            const position = state.positions.find(p => p.symbol === pair);
+            if (position && position.quantity >= quantity) {
+              tradePnl = (price - position.avgPrice) * quantity;
+            }
+          }
+          // For BUY trades, P&L is 0 until we sell (unrealized)
+
+          // Update position tracking
+          if (decision.action === 'BUY') {
+            updatePosition(state, pair, quantity, price);
+          } else {
+            // For SELL, reduce position
+            const position = state.positions.find(p => p.symbol === pair);
+            if (position) {
+              const newQty = position.quantity - quantity;
+              if (newQty <= 0) {
+                // Closed position completely
+                state.positions = state.positions.filter(p => p.symbol !== pair);
+              } else {
+                updatePosition(state, pair, -quantity, price);
+              }
+            }
+          }
+
+          // Record P&L
+          recordTradePnl(state, tradePnl);
           saveState(state);
 
           // Log the executed trade
-          const price = result.avgPrice || 0;
           logExecution(
             pair,
             decision.action,
@@ -160,6 +190,8 @@ export class Scheduler extends EventEmitter {
             price,
             this.tradingMode
           );
+
+          console.log(`[Scheduler] ${pair} P&L: $${tradePnl.toFixed(4)} | Cumulative: $${state.cumulativePnl.toFixed(4)} | Daily: $${state.dailyPnl.toFixed(4)}`);
         } else if (result.error) {
           // Log trade error
           logError(pair, decision.action, result.error, this.tradingMode);
