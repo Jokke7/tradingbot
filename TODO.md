@@ -286,6 +286,14 @@ These tasks validate that the agent can use our trading tools correctly.
       prompt. Task 1.6 upgrades this to Dexter's full Ink CLI. Until then,
       there's no real-time tool progress display.
 
+- [ ] **Dashboard Emergency Stop**: The button sends the request but the bot doesn't stop trading
+      - **Status**: Needs debugging - the `/emergency-stop` endpoint may not be checking the emergencyStop flag before executing trades
+      - **Debug**: Check scheduler.ts to ensure it checks `state.emergencyStop` before executing trades
+
+- [ ] **React Compiler (Optional)**: Consider adding React Compiler to dashboard for better performance
+      - Requires: `babel-plugin-react-compiler` + `eslint-plugin-react-compiler`
+      - See dashboard README for setup instructions
+
 ---
 
 ## Quick Reference

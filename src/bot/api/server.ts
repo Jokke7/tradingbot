@@ -18,11 +18,11 @@ interface ApiContext {
   params: Record<string, string>;
 }
 
-let schedulerRef: { isRunning: () => boolean; stop: () => void } | null = null;
+let schedulerRef: { isRunning: () => boolean; stop: () => void; start: () => void } | null = null;
 let stateRef: BotState | null = null;
 let clientRef: BinanceClient | null = null;
 
-export function setScheduler(scheduler: { isRunning: () => boolean; stop: () => void }): void {
+export function setScheduler(scheduler: { isRunning: () => boolean; stop: () => void; start: () => void }): void {
   schedulerRef = scheduler;
 }
 
@@ -56,9 +56,10 @@ async function handleHealth(_ctx: ApiContext): Promise<Response> {
 
 async function handleStatus(_ctx: ApiContext, _config: ApiConfig): Promise<Response> {
   const state = stateRef || loadState();
+  const schedulerRunning = schedulerRef?.isRunning() ?? false;
   
   return jsonResponse({
-    running: schedulerRef?.isRunning() ?? false,
+    running: schedulerRunning && !state.emergencyStop,
     emergencyStop: state.emergencyStop,
     mode: process.env.TRADING_MODE || 'paper',
     pairs: (process.env.BOT_PAIRS || 'BTCUSDT,ETHUSDT').split(','),
@@ -176,7 +177,8 @@ async function handleEmergencyStop(ctx: ApiContext, config: ApiConfig): Promise<
   } else if (action === 'start') {
     setEmergencyStop(state, false);
     saveState(state);
-    return jsonResponse({ emergencyStop: false, message: 'Trading can resume' });
+    schedulerRef?.start();
+    return jsonResponse({ emergencyStop: false, message: 'Trading can resume', running: schedulerRef?.isRunning() ?? false });
   }
 
   return jsonResponse({ emergencyStop: state.emergencyStop });
