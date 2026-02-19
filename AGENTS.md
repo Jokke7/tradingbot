@@ -11,7 +11,7 @@
 - **Runtime**: Bun (TypeScript/ESM)
 - **Entry point**: `src/bot/index.ts`
 - **Dexter location**: `src/dexter/` (read-only upstream — never modify)
-- **Current phase**: Phase 1 — Interactive Trading Tools
+- **Current phase**: Phase 5-6 — Production + Dashboard
 
 ---
 
@@ -107,8 +107,39 @@ src/bot/
 │   │   ├── account.ts    # get_binance_balance
 │   │   └── trade.ts      # execute_binance_trade
 │   └── signals/          # Technical indicators (RSI, MA, momentum)
-src/dexter/               # Upstream (READ-ONLY)
+├── loop/
+│   ├── scheduler.ts      # Autonomous trading loop
+│   ├── portfolio-manager.ts # Hourly Dexter consultation
+│   └── decision-engine.ts  # Signal analysis + trade decisions
+├── api/
+│   └── server.ts         # Bun.serve() HTTP API
+├── storage/
+│   ├── state.ts          # Bot state persistence
+│   ├── trade-log.ts      # Trade history (JSONL)
+│   └── portfolio-log.ts  # Portfolio recommendations log
+├── storage/
+│   └── portfolio-log.ts  # Dexter recommendations
+src/dexter/              # Upstream (READ-ONLY)
+logs/                    # Runtime logs (gitignored)
 ```
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/status` | GET | Bot status, emergency stop, mode |
+| `/portfolio` | GET | Account balances |
+| `/positions` | GET | Current positions with P&L |
+| `/recommendations` | GET | Dexter portfolio recommendations |
+| `/trades` | GET | Trade history |
+| `/signals/:pair` | GET | Technical indicators |
+| `/emergency-stop` | POST | Stop/resume trading |
+| `/config` | POST | Update runtime config |
+
+All endpoints except `/health` require `X-API-Key` header.
 
 ---
 

@@ -139,6 +139,35 @@ async function handlePositions(ctx: ApiContext, config: ApiConfig): Promise<Resp
   }
 }
 
+async function handleRecommendations(ctx: ApiContext, config: ApiConfig): Promise<Response> {
+  if (!parseAuthHeader(ctx.req, config)) {
+    return errorResponse('Unauthorized', 401);
+  }
+
+  const { readFileSync, existsSync } = await import('fs');
+  const today = new Date().toISOString().split('T')[0];
+  const logFile = `logs/portfolio-recommendations.jsonl`;
+
+  if (!existsSync(logFile)) {
+    return jsonResponse({ recommendations: [], date: today });
+  }
+
+  try {
+    const content = readFileSync(logFile, 'utf-8');
+    const lines = content.trim().split('\n').slice(-50);
+    const recommendations = lines.map(line => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+    return jsonResponse({ recommendations, date: today });
+  } catch {
+    return jsonResponse({ recommendations: [], date: today });
+  }
+}
+
 async function handleTrades(ctx: ApiContext, config: ApiConfig): Promise<Response> {
   if (!parseAuthHeader(ctx.req, config)) {
     return errorResponse('Unauthorized', 401);
@@ -260,6 +289,7 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
     '/status': handleStatus,
     '/portfolio': handlePortfolio,
     '/positions': handlePositions,
+    '/recommendations': handleRecommendations,
     '/trades': handleTrades,
     '/signals/:pair': handleSignals,
     '/emergency-stop': handleEmergencyStop,
