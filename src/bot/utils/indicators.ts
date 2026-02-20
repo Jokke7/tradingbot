@@ -32,6 +32,28 @@ export function ema(prices: number[], period: number): number {
 }
 
 /**
+ * Compute EMA values for all points in a single O(n) pass.
+ * Returns array of EMA values (same length as input, with NaN for first period-1).
+ */
+function emaSeries(prices: number[], period: number): number[] {
+  if (prices.length < period) return [];
+
+  const k = 2 / (period + 1);
+  const result: number[] = new Array(prices.length).fill(NaN);
+
+  // Seed with SMA of first `period` values
+  let emaCurrent = prices.slice(0, period).reduce((s, p) => s + p, 0) / period;
+
+  for (let i = period; i < prices.length; i++) {
+    result[i] = emaCurrent;
+    emaCurrent = prices[i] * k + emaCurrent * (1 - k);
+  }
+  result[prices.length - 1] = emaCurrent;
+
+  return result;
+}
+
+/**
  * Relative Strength Index (RSI).
  * Standard Wilder's RSI with smoothed moving average of gains/losses.
  * Returns value between 0-100.
@@ -80,12 +102,15 @@ export function macd(
   const slowEma = ema(prices, slowPeriod);
   const macdLine = fastEma - slowEma;
 
-  // For signal line, we need MACD values over time
-  // Simplified: compute MACD for the last `signalPeriod` windows
+  // Compute MACD series in O(n) using incremental EMA
+  const fastEmaSeries = emaSeries(prices, fastPeriod);
+  const slowEmaSeries = emaSeries(prices, slowPeriod);
+
   const macdValues: number[] = [];
-  for (let i = slowPeriod; i <= prices.length; i++) {
-    const slice = prices.slice(0, i);
-    macdValues.push(ema(slice, fastPeriod) - ema(slice, slowPeriod));
+  for (let i = 0; i < prices.length; i++) {
+    if (!isNaN(fastEmaSeries[i]) && !isNaN(slowEmaSeries[i])) {
+      macdValues.push(fastEmaSeries[i] - slowEmaSeries[i]);
+    }
   }
 
   const signalLine = macdValues.length >= signalPeriod
