@@ -149,7 +149,16 @@ export class BinanceClient {
    * Handle API response: parse JSON, throw on error.
    */
   private async handleResponse<T>(res: Response): Promise<T> {
-    const data = await res.json();
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      const text = await res.text();
+      throw new BinanceError(
+        res.status,
+        `Non-JSON response: ${text.slice(0, 200)}`
+      );
+    }
 
     if (!res.ok) {
       const error = data as BinanceApiError;
