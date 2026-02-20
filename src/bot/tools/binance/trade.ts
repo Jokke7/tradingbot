@@ -140,10 +140,19 @@ export async function executeTrade(
   side: 'BUY' | 'SELL',
   quoteAmountUsd: number,
   type: 'MARKET' | 'LIMIT' = 'MARKET',
-  price?: string
+  price?: string,
+  maxTradeUsd?: number,
+  mode: 'paper' | 'testnet' | 'live' = 'live'
 ): Promise<{ orderId: number; executedQty: string; avgPrice: string; mode: string }> {
   if (type === 'LIMIT' && !price) {
     throw new Error('Limit orders require a price');
+  }
+
+  // Enforce maxTradeUsd limit if provided
+  let cappedAmount = quoteAmountUsd;
+  if (maxTradeUsd && quoteAmountUsd > maxTradeUsd) {
+    console.warn(`[executeTrade] ${side} amount $${quoteAmountUsd} capped to $${maxTradeUsd} (maxTradeUsd)`);
+    cappedAmount = maxTradeUsd;
   }
 
   const params: Record<string, string | number> = {
@@ -153,10 +162,10 @@ export async function executeTrade(
   };
 
   if (type === 'MARKET') {
-    params.quoteOrderQty = quoteAmountUsd.toString();
+    params.quoteOrderQty = cappedAmount.toString();
   } else if (type === 'LIMIT' && price) {
     params.price = price;
-    params.quantity = (quoteAmountUsd / parseFloat(price)).toFixed(8);
+    params.quantity = (cappedAmount / parseFloat(price)).toFixed(8);
     params.timeInForce = 'GTC';
   }
 
@@ -168,7 +177,7 @@ export async function executeTrade(
     avgPrice: parseFloat(order.executedQty) > 0
       ? (parseFloat(order.cummulativeQuoteQty) / parseFloat(order.executedQty)).toFixed(2)
       : 'N/A',
-    mode: 'live',
+    mode,
   };
 }
 

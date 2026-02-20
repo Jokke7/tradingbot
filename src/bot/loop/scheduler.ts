@@ -467,7 +467,10 @@ export class Scheduler extends EventEmitter {
           pair,
           side,
           decision.size_usd,
-          'MARKET'
+          'MARKET',
+          undefined,
+          this.config.maxTradeUsd,
+          this.tradingMode
         );
       }
 
