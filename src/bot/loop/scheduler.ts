@@ -57,7 +57,7 @@ export class Scheduler extends EventEmitter {
     this.client = client;
     this.tradingMode = tradingMode;
     this.circuitBreakers = new Map();
-    this.portfolioManager = createPortfolioManager(client);
+    this.portfolioManager = createPortfolioManager(client, config.pairs);
   }
 
   start(): void {
@@ -95,7 +95,17 @@ export class Scheduler extends EventEmitter {
   }
 
   private async runLoop(): Promise<void> {
-    for (const pair of this.config.pairs) {
+    const state = loadState();
+    const heldPairs = state.positions.map(p => p.symbol);
+
+    if (heldPairs.length === 0) {
+      console.log('[Scheduler] No positions held, skipping pair evaluation (portfolio manager handles new entries)');
+      return;
+    }
+
+    console.log(`[Scheduler] Evaluating ${heldPairs.length} held position(s): ${heldPairs.join(', ')}`);
+
+    for (const pair of heldPairs) {
       if (!this.running) break;
       await this.evaluatePair(pair);
     }
@@ -159,6 +169,7 @@ export class Scheduler extends EventEmitter {
       const decision = {
         action: 'SELL' as const,
         confidence: 100,
+        conviction: 5,
         reasoning: 'Portfolio manager recommendation',
         size_usd: value,
       };
@@ -168,7 +179,7 @@ export class Scheduler extends EventEmitter {
       if (result.executed) {
         // Remove position
         state.positions = state.positions.filter(p => p.symbol !== symbol);
-        recordTradePnl(state, value - position.avgPrice * position.quantity);
+        recordTradePnl(state, value - position!.avgPrice * position!.quantity);
         saveState(state);
         console.log(`[PortfolioManager] Sold ${symbol} - executed`);
         logExecutedRecommendation(symbol, 'SELL', value, 'Portfolio manager recommendation');
@@ -196,6 +207,7 @@ export class Scheduler extends EventEmitter {
       const decision = {
         action: 'BUY' as const,
         confidence: 100,
+        conviction: 5,
         reasoning: 'Portfolio manager recommendation',
         size_usd: rec.amountUsd,
       };
@@ -242,14 +254,17 @@ export class Scheduler extends EventEmitter {
         return;
       }
 
+      // Get position context for this pair
+      const position = state.positions.find(p => p.symbol === pair);
+
       const engine = createDecisionEngine(this.client, {
         confidenceThreshold: this.config.confidenceThreshold,
         maxTradeUsd: this.config.maxTradeUsd,
       }, this.model);
 
-      const decision = await engine.evaluatePair(pair);
+      const decision = await engine.evaluatePair(pair, position);
       this.emit('decision', pair, decision);
-      console.log(`[Scheduler] ${pair}: ${decision.action} (confidence: ${decision.confidence}%) - ${decision.reasoning}`);
+      console.log(`[Scheduler] ${pair}: ${decision.action} (confidence: ${decision.confidence}%, conviction: ${decision.conviction}/5) - ${decision.reasoning}`);
 
       // Log the decision (including HOLDs)
       logDecision(
@@ -291,17 +306,8 @@ export class Scheduler extends EventEmitter {
           if (decision.action === 'BUY') {
             updatePosition(state, pair, quantity, price);
           } else {
-            // For SELL, reduce position
-            const position = state.positions.find(p => p.symbol === pair);
-            if (position) {
-              const newQty = position.quantity - quantity;
-              if (newQty <= 0) {
-                // Closed position completely
-                state.positions = state.positions.filter(p => p.symbol !== pair);
-              } else {
-                updatePosition(state, pair, -quantity, price);
-              }
-            }
+            // For SELL, reduce position (negative quantity)
+            updatePosition(state, pair, -quantity, price);
           }
 
           // Record P&L

@@ -78,14 +78,23 @@ function checkDailyReset(state: BotState): void {
 
 export function updatePosition(state: BotState, symbol: string, quantity: number, price: number): void {
   const existing = state.positions.find(p => p.symbol === symbol);
-  
-  if (quantity <= 0) {
+
+  if (quantity < 0) {
+    // Sell / reduce position
     if (existing) {
-      state.positions = state.positions.filter(p => p.symbol !== symbol);
+      const newQty = existing.quantity + quantity; // quantity is negative
+      if (newQty <= 0) {
+        state.positions = state.positions.filter(p => p.symbol !== symbol);
+      } else {
+        existing.quantity = newQty;
+      }
     }
     return;
   }
 
+  if (quantity === 0) return;
+
+  // Buy / add to position
   if (existing) {
     const totalQty = existing.quantity + quantity;
     const totalValue = (existing.quantity * existing.avgPrice) + (quantity * price);
