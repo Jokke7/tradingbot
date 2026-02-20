@@ -14,6 +14,7 @@ export interface SchedulerConfig {
   intervalMs: number;
   confidenceThreshold: number;
   maxTradeUsd: number;
+  dailyLossLimitUsd: number;
 }
 
 export interface TradeResult {
@@ -234,7 +235,7 @@ export class Scheduler extends EventEmitter {
     }
 
     // Safety check: daily loss limit
-    if (state.dailyPnl < -10) {
+    if (state.dailyPnl < -this.config.dailyLossLimitUsd) {
       console.log(`[Scheduler] Daily loss limit exceeded ($${state.dailyPnl}), halting trading`);
       return;
     }
@@ -496,5 +497,6 @@ export function createScheduler(
     intervalMs: botConfig.checkIntervalMs,
     confidenceThreshold: botConfig.confidenceThreshold,
     maxTradeUsd: botConfig.maxTradeUsd,
+    dailyLossLimitUsd: botConfig.dailyLossLimitUsd,
   }, model, client, botConfig.tradingMode);
 }
