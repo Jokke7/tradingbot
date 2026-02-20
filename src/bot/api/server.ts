@@ -46,8 +46,18 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function errorResponse(message: string, status = 400): Response {
-  return jsonResponse({ error: message }, status);
+function addCorsHeaders(res: Response, corsOrigin: string | undefined): Response {
+  if (corsOrigin) {
+    res.headers.set('Access-Control-Allow-Origin', corsOrigin);
+    res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.headers.set('Access-Control-Allow-Headers', 'X-API-Key, Content-Type');
+  }
+  return res;
+}
+
+function errorResponse(message: string, status = 400, corsOrigin?: string): Response {
+  const res = jsonResponse({ error: message }, status);
+  return addCorsHeaders(res, corsOrigin);
 }
 
 async function handleHealth(_ctx: ApiContext): Promise<Response> {
@@ -55,7 +65,7 @@ async function handleHealth(_ctx: ApiContext): Promise<Response> {
 }
 
 async function handleStatus(_ctx: ApiContext, _config: ApiConfig): Promise<Response> {
-  const state = stateRef || loadState();
+  const state = loadState();
   const schedulerRunning = schedulerRef?.isRunning() ?? false;
   
   return jsonResponse({
@@ -178,6 +188,7 @@ async function handleTrades(ctx: ApiContext, config: ApiConfig): Promise<Respons
 
   const { readFileSync, existsSync } = await import('fs');
   const logFile = `logs/trades-${today}.jsonl`;
+  console.log(`[API] Reading trades from: ${logFile}, exists: ${existsSync(logFile)}`);
 
   if (!existsSync(logFile)) {
     return jsonResponse({ trades: [], date: today });
@@ -185,9 +196,18 @@ async function handleTrades(ctx: ApiContext, config: ApiConfig): Promise<Respons
 
   try {
     const content = readFileSync(logFile, 'utf-8');
-    const trades = content.trim().split('\n').map(line => JSON.parse(line));
+    const lines = content.trim().split('\n');
+    console.log(`[API] Read ${lines.length} lines from ${logFile}`);
+    const trades = lines.map(line => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
     return jsonResponse({ trades, date: today });
-  } catch {
+  } catch (e) {
+    console.error(`[API] Error reading trades: ${e}`);
     return jsonResponse({ trades: [], date: today });
   }
 }
@@ -322,23 +342,14 @@ export async function startApiServer(config: ApiConfig): Promise<unknown> {
             req,
             params: match.groups || {},
           };
-          
+
           const response = handler(ctx, config);
-          
-          if (config.corsOrigin) {
-            return response.then(res => {
-              res.headers.set('Access-Control-Allow-Origin', config.corsOrigin);
-              res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-              res.headers.set('Access-Control-Allow-Headers', 'X-API-Key, Content-Type');
-              return res;
-            });
-          }
-          
-          return response;
+
+          return response.then(res => addCorsHeaders(res, config.corsOrigin));
         }
       }
 
-      return errorResponse('Not found', 404);
+      return errorResponse('Not found', 404, config.corsOrigin);
     },
   };
 
