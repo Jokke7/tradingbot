@@ -176,11 +176,14 @@ export class Scheduler extends EventEmitter {
       };
 
       const result = await this.executeTrade(symbol, decision);
-      
+
       if (result.executed) {
+        // Capture values before mutation
+        const avgPrice = position.avgPrice;
+        const qty = position.quantity;
         // Remove position
         state.positions = state.positions.filter(p => p.symbol !== symbol);
-        recordTradePnl(state, value - position!.avgPrice * position!.quantity);
+        recordTradePnl(state, value - avgPrice * qty);
         saveState(state);
         console.log(`[PortfolioManager] Sold ${symbol} - executed`);
         logExecutedRecommendation(symbol, 'SELL', value, 'Portfolio manager recommendation');
