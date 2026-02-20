@@ -12,6 +12,7 @@ logs/pm2*.log
 
 # Dexter runtime data
 src/dexter/.dexter/
+.dexter/
 
 # Build output
 dist/
@@ -32,3 +33,4 @@ TODO.md
 PLAN.md
 project_outline.md
 AGENTS.md
+fix.md
