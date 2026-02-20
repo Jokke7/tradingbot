@@ -44,15 +44,15 @@ export function createPositionSizingTool(config: BotConfig) {
         positionSizeUsd = config.maxTradeUsd;
       }
 
-      // Position size in base asset units
-      const positionSizeUnits = positionSizeUsd / entryPrice;
-
       // Max portfolio exposure check (50% single-asset limit)
       const maxExposureUsd = accountBalanceUsd * 0.5;
       const cappedByExposure = positionSizeUsd > maxExposureUsd;
       if (cappedByExposure) {
         positionSizeUsd = maxExposureUsd;
       }
+
+      // Position size in base asset units (after all caps applied)
+      const positionSizeUnits = positionSizeUsd / entryPrice;
 
       return JSON.stringify({
         recommendedPositionUsd: parseFloat(positionSizeUsd.toFixed(2)),
