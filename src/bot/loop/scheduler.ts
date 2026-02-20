@@ -386,7 +386,14 @@ export class Scheduler extends EventEmitter {
     try {
       const account = await this.client.signedGet<{ balances: { asset: string; free: string; locked: string }[] }>('/v3/account', {});
 
-      // Get current prices for all assets
+      // Get current prices for all assets (single bulk call)
+      const allPrices = await this.client.publicGet<{ symbol: string; price: string }[]>('/v3/ticker/price');
+      const priceMap = new Map<string, number>();
+      for (const ticker of allPrices) {
+        priceMap.set(ticker.symbol, parseFloat(ticker.price));
+      }
+
+      // Calculate portfolio value using the price map
       const balances = account.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
       let totalPortfolioValue = 0;
 
@@ -397,15 +404,9 @@ export class Scheduler extends EventEmitter {
         if (balance.asset === 'USDT') {
           totalPortfolioValue += amount;
         } else {
-          // Get price in USDT
-          try {
-            const symbol = `${balance.asset}USDT`;
-            const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol });
-            const price = parseFloat(ticker.price);
+          const price = priceMap.get(`${balance.asset}USDT`);
+          if (price !== undefined) {
             totalPortfolioValue += amount * price;
-          } catch {
-            // Skip assets we can't price
-            continue;
           }
         }
       }
@@ -416,12 +417,13 @@ export class Scheduler extends EventEmitter {
       const assetBalance = balances.find(b => b.asset === assetSymbol);
       const currentAssetAmount = assetBalance ? parseFloat(assetBalance.free) + parseFloat(assetBalance.locked) : 0;
 
-      // Get current price of the asset
+      // Get current price of the asset from the price map
       let currentAssetValue = 0;
       if (currentAssetAmount > 0) {
-        const ticker = await this.client.publicGet<{ price: string }>('/v3/ticker/price', { symbol: pair });
-        const price = parseFloat(ticker.price);
-        currentAssetValue = currentAssetAmount * price;
+        const price = priceMap.get(pair);
+        if (price !== undefined) {
+          currentAssetValue = currentAssetAmount * price;
+        }
       }
 
       // Calculate post-trade position: current + new
