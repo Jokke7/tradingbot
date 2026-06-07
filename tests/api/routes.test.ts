@@ -48,7 +48,9 @@ describe('API Routes', () => {
 
   describe('GET /trades', () => {
     it('returns empty trades for today', async () => {
-      const res = await fetch(`${baseUrl}/trades`);
+      const res = await fetch(`${baseUrl}/trades`, {
+        headers: { 'X-API-Key': 'test-api-key' },
+      });
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.trades).toBeDefined();

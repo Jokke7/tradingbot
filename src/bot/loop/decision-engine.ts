@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { BinanceClient } from '../tools/binance/client.js';
-import type { BotConfig } from '../config.js';
-import { callLlm } from '../../dexter/src/model/llm.js';
+import type { MarketDataProvider } from '../data/provider.js';
 import { rsi } from '../utils/indicators.js';
 import { sma } from '../utils/indicators.js';
 import { macd } from '../utils/indicators.js';
+import { TradingAgent } from '../agent/trading-agent.js';
+import { InMemoryChatHistory } from '../../dexter/src/utils/in-memory-chat-history.js';
+import { loadBotConfig, loadBinanceConfig } from '../config.js';
 
 export const TradingDecisionSchema = z.object({
   action: z.enum(['BUY', 'SELL', 'HOLD']),
@@ -33,43 +34,50 @@ export interface DecisionEngineConfig {
 }
 
 export class DecisionEngine {
-  private client: BinanceClient;
+  private dataProvider: MarketDataProvider;
   private config: DecisionEngineConfig;
   private model: string;
+  private analystChat: InMemoryChatHistory;
+  private riskManagerChat: InMemoryChatHistory;
 
-  constructor(client: BinanceClient, config: DecisionEngineConfig, model: string) {
-    this.client = client;
+  constructor(dataProvider: MarketDataProvider, config: DecisionEngineConfig, model: string) {
+    this.dataProvider = dataProvider;
     this.config = config;
     this.model = model;
+    this.analystChat = new InMemoryChatHistory(model);
+    this.riskManagerChat = new InMemoryChatHistory(model);
   }
 
   async evaluatePair(symbol: string): Promise<TradingDecision> {
     const marketData = await this.fetchMarketData(symbol);
-    const decision = await this.getLlmDecision(symbol, marketData);
-    const validated = TradingDecisionSchema.parse(decision);
 
-    if (validated.action !== 'HOLD' && validated.confidence >= this.config.confidenceThreshold) {
-      const reflected = await this.selfReflect(symbol, marketData, validated);
-      return reflected;
+    // Analyst agent proposes a trade
+    const analystProposal = await this.getAnalystProposal(symbol, marketData);
+    const validatedProposal = TradingDecisionSchema.parse(this.parseDecision(analystProposal));
+
+    if (validatedProposal.action === 'HOLD' || validatedProposal.confidence < this.config.confidenceThreshold) {
+      return validatedProposal;
     }
 
-    return validated;
+    // Risk Manager reviews the proposal
+    const riskManagerReview = await this.getRiskManagerReview(symbol, marketData, validatedProposal);
+    return TradingDecisionSchema.parse(riskManagerReview);
   }
 
   private async fetchMarketData(symbol: string): Promise<MarketData> {
     const [ticker, klines] = await Promise.all([
-      this.client.publicGet<{ lastPrice: string; priceChangePercent: string }>('/v3/ticker/24hr', { symbol }),
-      this.client.publicGet<{ [index: number]: string }[]>('/v3/klines', { symbol, interval: '1h', limit: 200 }),
+      this.dataProvider.getTicker(symbol),
+      this.dataProvider.getKlines(symbol, '1h', 200),
     ]);
 
-    const closes = klines.map((k) => parseFloat(k[4]));
+    const closes = klines.map((k) => k.close);
 
     const macdResult = macd(closes);
 
     return {
       symbol,
-      currentPrice: parseFloat(ticker.lastPrice),
-      priceChange24h: parseFloat(ticker.priceChangePercent),
+      currentPrice: ticker.lastPrice,
+      priceChange24h: ticker.priceChangePercent,
       rsi: rsi(closes, 14),
       sma20: sma(closes, 20),
       sma50: sma(closes, 50),
@@ -79,22 +87,33 @@ export class DecisionEngine {
     };
   }
 
-  private async getLlmDecision(symbol: string, data: MarketData): Promise<TradingDecision> {
-    const prompt = this.buildDecisionPrompt(symbol, data);
+  private async getAnalystProposal(symbol: string, data: MarketData): Promise<string> {
+    const prompt = this.buildAnalystPrompt(symbol, data);
 
-    const result = await callLlm(prompt, {
-      model: this.model,
-      systemPrompt: 'You are a crypto trading assistant. Respond with ONLY JSON.',
-    });
+    const botConfig = loadBotConfig();
+    const binanceConfig = loadBinanceConfig();
 
-    const response = typeof result.response === 'string' 
-      ? result.response 
-      : (result.response as { content: string }).content;
+    const analystAgent = TradingAgent.create(
+      { model: this.model, maxIterations: 10 },
+      botConfig,
+      binanceConfig,
+      'You are an aggressive crypto trading analyst looking for opportunities. Respond with ONLY JSON matching the TradingDecision schema.'
+    );
 
-    return this.parseDecision(response);
+    let lastResponse = '';
+    for await (const event of analystAgent.run(prompt, this.analystChat)) {
+      if (event.type === 'done') {
+        lastResponse = event.answer;
+      }
+    }
+
+    this.analystChat.addMessage('user', prompt);
+    this.analystChat.addMessage('assistant', lastResponse);
+
+    return lastResponse;
   }
 
-  private buildDecisionPrompt(symbol: string, data: MarketData): string {
+  private buildAnalystPrompt(symbol: string, data: MarketData): string {
     return `
 Analyze ${symbol} and decide whether to BUY, SELL, or HOLD.
 
@@ -132,62 +151,57 @@ Rules:
     }
   }
 
-  private async selfReflect(
+  private async getRiskManagerReview(
     symbol: string,
     data: MarketData,
     decision: TradingDecision
   ): Promise<TradingDecision> {
-    const reflectionPrompt = `
-Review this trading decision:
-
+    const prompt = `
+The Analyst proposed the following trade:
 Asset: ${symbol}
 Price: $${data.currentPrice.toFixed(2)}
 RSI: ${data.rsi.toFixed(1)}
 MACD Histogram: ${data.macd.histogram.toFixed(4)}
 
-Proposed: ${decision.action} $${decision.size_usd} (confidence: ${decision.confidence})
+Proposed Action: ${decision.action}
+Size: $${decision.size_usd}
+Confidence: ${decision.confidence}
 Reasoning: ${decision.reasoning}
 
-Respond with ONLY JSON:
-{"approved": true|false, "reason": "why or why not"}
+Review this proposal critically. If it is too risky or violates safety parameters, reject it by returning an action of HOLD.
+Respond with ONLY JSON matching the TradingDecision schema, providing your own reasoning and adjusting size/confidence if necessary.
 `;
 
-    const result = await callLlm(reflectionPrompt, {
-      model: this.model,
-      systemPrompt: 'You are a trading risk reviewer.',
-    });
+    const botConfig = loadBotConfig();
+    const binanceConfig = loadBinanceConfig();
 
-    const response = typeof result.response === 'string' 
-      ? result.response 
-      : (result.response as { content: string }).content;
+    const riskManagerAgent = TradingAgent.create(
+      { model: this.model, maxIterations: 10 },
+      botConfig,
+      binanceConfig,
+      'You are a conservative crypto risk manager focused on capital preservation. Respond with ONLY JSON matching the TradingDecision schema.'
+    );
 
-    try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.approved === false) {
-          return { 
-            action: 'HOLD', 
-            size_usd: 0, 
-            confidence: decision.confidence,
-            reasoning: `Rejected: ${parsed.reason}`
-          };
-        }
+    let lastResponse = '';
+    for await (const event of riskManagerAgent.run(prompt, this.riskManagerChat)) {
+      if (event.type === 'done') {
+        lastResponse = event.answer;
       }
-    } catch {
-      // Ignore parse errors
     }
 
-    return decision;
+    this.riskManagerChat.addMessage('user', prompt);
+    this.riskManagerChat.addMessage('assistant', lastResponse);
+
+    return this.parseDecision(lastResponse);
   }
 }
 
 export function createDecisionEngine(
-  client: BinanceClient,
+  dataProvider: MarketDataProvider,
   botConfig: { confidenceThreshold: number; maxTradeUsd: number },
   model: string
 ): DecisionEngine {
-  return new DecisionEngine(client, {
+  return new DecisionEngine(dataProvider, {
     confidenceThreshold: botConfig.confidenceThreshold,
     maxTradeUsd: botConfig.maxTradeUsd,
   }, model);
