@@ -59,11 +59,12 @@ export class TradingAgent {
   static create(
     agentConfig: AgentConfig,
     botConfig: BotConfig,
-    binanceConfig: BinanceConfig | null
+    binanceConfig: BinanceConfig | null,
+    overrideSystemPrompt?: string
   ): TradingAgent {
     const model = agentConfig.model ?? botConfig.model;
     const tools = getTradingTools(model, botConfig, binanceConfig);
-    const systemPrompt = buildTradingSystemPrompt(model, botConfig, binanceConfig);
+    const systemPrompt = overrideSystemPrompt ?? buildTradingSystemPrompt(model, botConfig, binanceConfig);
     return new TradingAgent({ ...agentConfig, model }, tools, systemPrompt);
   }
 
