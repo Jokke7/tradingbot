@@ -2,6 +2,7 @@ import { loadState, saveState, setEmergencyStop, type BotState } from '../storag
 import { BinanceClient } from '../tools/binance/client.js';
 import type { BotConfig, BinanceConfig } from '../config.js';
 import type { Server } from 'bun';
+import { timingSafeEqual } from 'node:crypto';
 
 export interface ApiConfig {
   port: number;
@@ -35,8 +36,12 @@ export function setBinanceClient(client: BinanceClient): void {
 }
 
 function parseAuthHeader(req: Request, config: ApiConfig): boolean {
-  const authHeader = req.headers.get('X-API-Key');
-  return authHeader === config.apiKey;
+  const provided = req.headers.get('X-API-Key');
+  if (!provided || !config.apiKey) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(config.apiKey);
+  // Constant-time comparison so response timing does not leak how much of the key matched.
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

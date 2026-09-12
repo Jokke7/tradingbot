@@ -56,12 +56,33 @@ describe('API Routes', () => {
       expect(json.trades).toBeDefined();
       expect(Array.isArray(json.trades)).toBe(true);
     });
+
+    it('requires auth', async () => {
+      const res = await fetch(`${baseUrl}/trades`);
+      expect(res.status).toBe(401);
+    });
   });
 
   describe('POST /emergency-stop', () => {
     it('requires auth', async () => {
       const res = await fetch(`${baseUrl}/emergency-stop`, {
         method: 'POST',
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects a wrong key', async () => {
+      const res = await fetch(`${baseUrl}/emergency-stop`, {
+        method: 'POST',
+        headers: { 'X-API-Key': 'wrong-key' },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects a key that only matches as a prefix', async () => {
+      const res = await fetch(`${baseUrl}/emergency-stop`, {
+        method: 'POST',
+        headers: { 'X-API-Key': 'test-api-key-extra' },
       });
       expect(res.status).toBe(401);
     });
